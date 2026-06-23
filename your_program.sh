@@ -14,5 +14,5 @@ set -e
   fi
 )
 
-# Point this to "server" instead of "sqlite"
-exec $(dirname "$0")/build/server "$@"
+# Reverted strictly back to "sqlite"
+exec $(dirname "$0")/build/sqlite "$@"
