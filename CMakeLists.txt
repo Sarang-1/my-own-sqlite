@@ -1,6 +1,9 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.13)
+project(sqlite-starter-cpp)
 
-# FORCE CMAKE TO USE W64DEVKIT BEFORE IT LOOKS AT S_PROJECT SYSTEM CACHE
+set(CMAKE_CXX_STANDARD 23)
 
+file(GLOB_RECURSE SOURCE_FILES src/*.cpp src/*.hpp)
 
-project(codecrafters_sqlite LANGUAGES C CXX)
+# Change the target name to "server" so it aligns with CodeCrafters' run scripts
+add_executable(server ${SOURCE_FILES})
