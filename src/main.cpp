@@ -88,7 +88,7 @@ int main(int argc, char *argv[]) {
 
     if (command == ".dbinfo") {
         cout << "database page size: " << db.page_size << endl;
-        cout << "number of tables: " << db.cell_count << endl;
+        // cout << "number of tables: " << db.cell_count << endl;
         return 0;
     } 
     else if (command == ".tables") {
