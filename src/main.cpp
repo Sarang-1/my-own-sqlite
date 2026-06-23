@@ -13,7 +13,7 @@ const int DB_HEADER_SIZE = 100;
 class DB {
 public:
     ifstream stream;
-    unsigned short page_size;
+    unsigned short page_size,cell_count;
 
     DB(string db_file_path) {
         this->stream = ifstream(db_file_path, ios::binary);
@@ -25,14 +25,16 @@ public:
         // Extract Page Size
         this->stream.seekg(16);
         this->page_size = big_endian(this->stream, 2);
+
+        this->stream.seekg(103);
+        this->cell_count = big_endian(stream, 2);
     }
 
     void print_table_names() {
         // Page 1 contains the sqlite_schema.
         // The cell count is located at byte offset 3 of the B-Tree page header.
         // Since Page 1 has a 100-byte DB header, the cell count is at 100 + 3 = 103.
-        stream.seekg(103);
-        unsigned short cell_count = big_endian(stream, 2);
+        
 
         vector<string> table_names;
 
@@ -86,7 +88,7 @@ int main(int argc, char *argv[]) {
 
     if (command == ".dbinfo") {
         cout << "database page size: " << db.page_size << endl;
-        // You can add your get_number_of_db_tables logic back here if needed
+        cout << "number of tables: " << db.cell_count << endl;
         return 0;
     } 
     else if (command == ".tables") {
