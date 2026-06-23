@@ -1,9 +1,7 @@
-cmake_minimum_required(VERSION 3.13)
+cmake_minimum_required(VERSION 3.10)
 
-project(sqlite-starter-cpp)
+# FORCE CMAKE TO USE W64DEVKIT BEFORE IT LOOKS AT S_PROJECT SYSTEM CACHE
+set(CMAKE_C_COMPILER "D:/w64devkit/bin/gcc.exe")
+set(CMAKE_CXX_COMPILER "D:/w64devkit/bin/g++.exe")
 
-set(CMAKE_CXX_STANDARD 23) # Enable the C++23 standard
-
-file(GLOB_RECURSE SOURCE_FILES src/*.cpp src/*.hpp)
-
-add_executable(sqlite ${SOURCE_FILES})
+project(MyProjectName)
