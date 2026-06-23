@@ -154,41 +154,259 @@ public:
 
     // 2. Scan a target page, parse every row, and print the requested column index
     // Added default parameters: filter_col_idx = -1 (meaning "no filter")
+    // Replaced print_projected_rows with a universal recursive B-Tree walker
     void print_projected_rows(int page_number, const vector<int>& col_indices, int filter_col_idx = -1, string filter_val = "") {
-        size_t page_offset = (page_number == 1) ? 100 : ((page_number - 1) * this->page_size);
+        size_t page_start = (page_number - 1) * this->page_size;
+        size_t header_tax = (page_number == 1) ? 100 : 0;
+        size_t btree_header_start = page_start + header_tax;
 
-        stream.seekg(page_offset + 3);
-        unsigned short page_cells = big_endian(stream, 2);
-        size_t cell_ptr_offset = page_offset + ((page_number == 1) ? 108 : 8);
+        stream.seekg(btree_header_start);
+        unsigned char page_type;
+        stream.read((char*)&page_type, 1);
 
-        for (int i = 0; i < page_cells; i++) {
-            stream.seekg(cell_ptr_offset + (i * 2));
-            unsigned short cell_offset = big_endian(stream, 2);
-            stream.seekg(page_offset + cell_offset);
+        if (page_type == 0x0D) {
+            // ==========================================================
+            //              CASE 1: LEAF PAGE (Payload Data)
+            // ==========================================================
+            stream.seekg(btree_header_start + 3);
+            unsigned short page_cells = big_endian(stream, 2);
+            size_t cell_ptr_array_start = btree_header_start + 8;
 
-            parse_varint(stream); // skip payload size
-            parse_varint(stream); // skip rowid
+            for (int i = 0; i < page_cells; i++) {
+                stream.seekg(cell_ptr_array_start + (i * 2));
+                unsigned short cell_offset = big_endian(stream, 2);
+                
+                stream.seekg(page_start + cell_offset);
 
-            vector<string> row = parse_record(stream);
+                parse_varint(stream); // skip payload size
 
-            // ---> THE WHERE CLAUSE GATEKEEPER <---
-            if (filter_col_idx != -1) {
-                // If the row is missing this column, or the value doesn't match: drop it.
-                if (filter_col_idx >= row.size() || row[filter_col_idx] != filter_val) {
-                    continue; 
+                // 1. STOP SKIPPING THIS! Capture the B-Tree RowID into a variable
+                int64_t row_id = parse_varint(stream).first; 
+
+                vector<string> row = parse_record(stream);
+
+                // 2. The SQLite RowID Alias Patch:
+                // If column 0 (id) came back as an optimized NULL, overwrite it with our captured RowID
+                if (!row.empty()) {
+                    string& col_zero = row[0];
+                    if (col_zero.empty() || col_zero == "NULL" || col_zero == "null" || col_zero == "None") {
+                        col_zero = to_string(row_id);
+                    }
                 }
+
+                // WHERE clause gatekeeper... (leave the rest of your loop untouched)
+
+                // WHERE clause gatekeeper
+                if (filter_col_idx != -1) {
+                    if (filter_col_idx >= row.size() || row[filter_col_idx] != filter_val) continue;
+                }
+
+                for (size_t k = 0; k < col_indices.size(); k++) {
+                    int c_idx = col_indices[k];
+                    cout << (c_idx < row.size() ? row[c_idx] : ""); 
+                    if (k < col_indices.size() - 1) cout << "|";
+                }
+                cout << endl;
+            }
+        }
+        else if (page_type == 0x05) {
+            // ==========================================================
+            //            CASE 2: INTERIOR PAGE (Navigation Signposts)
+            // ==========================================================
+            stream.seekg(btree_header_start + 3);
+            unsigned short page_cells = big_endian(stream, 2);
+
+            // An interior page header is 12 bytes long.
+            // Bytes 8, 9, 10, 11 hold the 4-byte Rightmost Child Page Pointer!
+            stream.seekg(btree_header_start + 8);
+            unsigned int rightmost_child_page = big_endian(stream, 4);
+
+            size_t cell_ptr_array_start = btree_header_start + 12;
+
+            for (int i = 0; i < page_cells; i++) {
+                stream.seekg(cell_ptr_array_start + (i * 2));
+                unsigned short cell_offset = big_endian(stream, 2);
+
+                // Seek to the cell. In an interior table B-tree, the very first 
+                // 4 bytes of the cell are the Left Child Page Pointer.
+                stream.seekg(page_start + cell_offset);
+                unsigned int left_child_page = big_endian(stream, 4);
+
+                // RECURSION: Dive down into the left child
+                print_projected_rows(left_child_page, col_indices, filter_col_idx, filter_val);
             }
 
-            // Print the mapped columns separated by '|'
-            for (size_t k = 0; k < col_indices.size(); k++) {
-                int c_idx = col_indices[k];
-                cout << (c_idx < row.size() ? row[c_idx] : ""); 
-                if (k < col_indices.size() - 1) cout << "|";
-            }
-            cout << endl;
+            // RECURSION: Finally, dive down into the rightmost child
+            print_projected_rows(rightmost_child_page, col_indices, filter_col_idx, filter_val);
+        }
+        else {
+            cerr << "Unsupported B-Tree page type: 0x" << hex << (int)page_type << " at page " << page_number << endl;
+            exit(1);
         }
     }
     
+    // 1. Search sqlite_schema to see if an index exists for a specific table & column
+    int get_index_root_page(const string& table_name, const string& col_name) {
+        for (int i = 0; i < cell_count; i++) {
+            stream.seekg(108 + (i * 2));
+            unsigned short cell_offset = big_endian(stream, 2);
+            stream.seekg(cell_offset);
+
+            parse_varint(stream); // payload size
+            parse_varint(stream); // rowid
+            vector<string> row = parse_record(stream);
+
+            // Columns: 0:type, 1:name, 2:tbl_name, 3:rootpage, 4:sql
+            if (row.size() >= 5 && row[0] == "index" && row[2] == table_name) {
+                string sql_lower = row[4];
+                for (char &c : sql_lower) if (c >= 'A' && c <= 'Z') c += 32;
+                string col_lower = col_name;
+                for (char &c : col_lower) if (c >= 'A' && c <= 'Z') c += 32;
+
+                size_t p_start = sql_lower.find('(');
+                if (p_start != string::npos && sql_lower.find(col_lower, p_start) != string::npos) {
+                    return stoi(row[3]);
+                }
+            }
+        }
+        return -1; // No index found
+    }
+
+    // 2. Fast B-Tree Index Traversal: Collects all RowIDs matching 'target_key'
+    void collect_rowids_from_index(int page_number, const string& target_key, vector<int64_t>& matching_rowids) {
+        size_t page_start = (page_number - 1) * this->page_size;
+        stream.seekg(page_start);
+        unsigned char page_type;
+        stream.read((char*)&page_type, 1);
+
+        if (page_type == 0x0A) {
+            // CASE A: LEAF INDEX PAGE
+            stream.seekg(page_start + 3);
+            unsigned short page_cells = big_endian(stream, 2);
+            size_t cell_ptr_start = page_start + 8;
+
+            for (int i = 0; i < page_cells; i++) {
+                stream.seekg(cell_ptr_start + (i * 2));
+                unsigned short cell_offset = big_endian(stream, 2);
+                stream.seekg(page_start + cell_offset);
+
+                parse_varint(stream); // payload size
+                vector<string> row = parse_record(stream);
+
+                if (!row.empty()) {
+                    string cell_key = row[0];
+                    if (cell_key == target_key && row.size() >= 2) {
+                        matching_rowids.push_back(stoll(row.back()));
+                    } else if (cell_key > target_key) {
+                        break; // Index is sorted; no more matches possible
+                    }
+                }
+            }
+        }
+        else if (page_type == 0x02) {
+            // CASE B: INTERIOR INDEX PAGE
+            stream.seekg(page_start + 3);
+            unsigned short page_cells = big_endian(stream, 2);
+            stream.seekg(page_start + 8);
+            unsigned int rightmost_child = big_endian(stream, 4);
+
+            size_t cell_ptr_start = page_start + 12;
+            bool broke = false;
+
+            for (int i = 0; i < page_cells; i++) {
+                stream.seekg(cell_ptr_start + (i * 2));
+                unsigned short cell_offset = big_endian(stream, 2);
+                stream.seekg(page_start + cell_offset);
+
+                unsigned int left_child = big_endian(stream, 4);
+                parse_varint(stream); // payload size
+                vector<string> row = parse_record(stream);
+
+                if (!row.empty()) {
+                    string cell_key = row[0];
+                    if (cell_key == target_key) {
+                        if (row.size() >= 2) matching_rowids.push_back(stoll(row.back()));
+                        collect_rowids_from_index(left_child, target_key, matching_rowids);
+                    } else if (cell_key > target_key) {
+                        collect_rowids_from_index(left_child, target_key, matching_rowids);
+                        broke = true;
+                        break;
+                    }
+                }
+            }
+            if (!broke) collect_rowids_from_index(rightmost_child, target_key, matching_rowids);
+        }
+        else {
+            cerr << "Unexpected index page type: 0x" << hex << (int)page_type << endl;
+            exit(1);
+        }
+    }
+
+    // 3. O(log N) Binary Table Point-Lookup by RowID
+    vector<string> find_row_by_rowid(int page_number, int64_t target_rowid) {
+        size_t page_start = (page_number - 1) * this->page_size;
+        size_t header_tax = (page_number == 1) ? 100 : 0;
+        size_t btree_header = page_start + header_tax;
+
+        stream.seekg(btree_header);
+        unsigned char page_type;
+        stream.read((char*)&page_type, 1);
+
+        if (page_type == 0x0D) {
+            // LEAF TABLE PAGE
+            stream.seekg(btree_header + 3);
+            unsigned short page_cells = big_endian(stream, 2);
+            size_t cell_ptr_start = btree_header + 8;
+
+            for (int i = 0; i < page_cells; i++) {
+                stream.seekg(cell_ptr_start + (i * 2));
+                unsigned short cell_offset = big_endian(stream, 2);
+                stream.seekg(page_start + cell_offset);
+
+                parse_varint(stream); // payload size
+                int64_t row_id = parse_varint(stream).first;
+
+                if (row_id == target_rowid) {
+                    vector<string> row = parse_record(stream);
+                    if (!row.empty()) {
+                        string& col_zero = row[0];
+                        if (col_zero.empty() || col_zero == "NULL" || col_zero == "null" || col_zero == "None") {
+                            col_zero = to_string(row_id);
+                        }
+                    }
+                    return row;
+                } else if (row_id > target_rowid) {
+                    break;
+                }
+            }
+            return {};
+        }
+        else if (page_type == 0x05) {
+            // INTERIOR TABLE PAGE
+            stream.seekg(btree_header + 3);
+            unsigned short page_cells = big_endian(stream, 2);
+            stream.seekg(btree_header + 8);
+            unsigned int rightmost_child = big_endian(stream, 4);
+
+            size_t cell_ptr_start = btree_header + 12;
+
+            for (int i = 0; i < page_cells; i++) {
+                stream.seekg(cell_ptr_start + (i * 2));
+                unsigned short cell_offset = big_endian(stream, 2);
+                stream.seekg(page_start + cell_offset);
+
+                unsigned int left_child = big_endian(stream, 4);
+                int64_t max_rowid_in_subtree = parse_varint(stream).first;
+
+                if (target_rowid <= max_rowid_in_subtree) {
+                    return find_row_by_rowid(left_child, target_rowid);
+                }
+            }
+            return find_row_by_rowid(rightmost_child, target_rowid);
+        }
+        return {};
+    }
+
 };
 
 int main(int argc, char *argv[]) {
@@ -280,16 +498,7 @@ int main(int argc, char *argv[]) {
         int root_page = meta.first;
         unordered_map<string, int> schema_map = parse_schema_to_map(meta.second);
 
-        // 2. Resolve the WHERE column to an integer index (if requested)
-        if (!where_col_name.empty()) {
-            if (schema_map.find(where_col_name) == schema_map.end()) {
-                cerr << "WHERE column '" << where_col_name << "' not found in schema." << endl;
-                return 1;
-            }
-            filter_idx = schema_map[where_col_name];
-        }
-
-        // 3. Resolve the SELECT projected columns
+        // 1. Resolve projected columns
         vector<int> projected_indices;
         stringstream ss_cols(raw_cols);
         string col_token;
@@ -302,8 +511,37 @@ int main(int argc, char *argv[]) {
             projected_indices.push_back(schema_map[clean_col]);
         }
 
-        // 4. Run the scan!
-        db.print_projected_rows(root_page, projected_indices, filter_idx, where_val);
+        // 2. Check if an Index exists to serve this WHERE clause
+        int index_root = -1;
+        if (!where_col_name.empty()) {
+            index_root = db.get_index_root_page(table_name, where_col_name);
+        }
+
+        if (index_root != -1) {
+            // ==========================================================
+            //                 FAST PATH: O(log N) INDEX SCAN
+            // ==========================================================
+            vector<int64_t> matching_rowids;
+            db.collect_rowids_from_index(index_root, where_val, matching_rowids);
+
+            for (int64_t rowid : matching_rowids) {
+                vector<string> row = db.find_row_by_rowid(root_page, rowid);
+                if (!row.empty()) {
+                    for (size_t k = 0; k < projected_indices.size(); k++) {
+                        int c_idx = projected_indices[k];
+                        cout << (c_idx < row.size() ? row[c_idx] : "");
+                        if (k < projected_indices.size() - 1) cout << "|";
+                    }
+                    cout << endl;
+                }
+            }
+        } else {
+            // ==========================================================
+            //               FALLBACK: NORMAL TABLE B-TREE SCAN
+            // ==========================================================
+            if (!where_col_name.empty()) filter_idx = schema_map[where_col_name];
+            db.print_projected_rows(root_page, projected_indices, filter_idx, where_val);
+        }
         return 0;
     }
     else {
