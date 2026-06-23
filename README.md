@@ -129,10 +129,14 @@ The project uses CMake and requires a compiler supporting C++23.
 ### Build Instructions
 
 Command:
-cmake -B build -S .
+```c++
+cmake -B build -S
+``` 
 
 Command:
+```c++
 cmake --build ./build
+```
 
 ### Cross-Platform Note
 The execution script (your_program.sh) detects the operating system environment at runtime. On a local Windows machine, it explicitly hooks into a w64devkit MinGW toolchain, while natively executing via standard Unix paths when deployed inside remote Linux testing pipelines.
