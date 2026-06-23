@@ -1047,4 +1047,5 @@ dkms.conf
 # Raspberry Pi Pico disassembler file
 *.dis
 
-vcpkg_installed
+vcpkg_installedbuild/
+.cmake/
