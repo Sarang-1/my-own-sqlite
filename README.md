@@ -1,6 +1,6 @@
 # SQLite Storage & Query Engine from Scratch (C++23)
 
-I built a lightweight relational database storage engine from scratch in C++23. It parses, navigates, and queries binary SQLite .db files directly from disk. It does not use the official SQLite library or any external database dependencies—just raw binary file I/O and stream parsing.
+I built a lightweight relational database storage engine from scratch in C++23. It parses, navigates, and queries binary SQLite .db files directly from disk. It does not use the official SQLite library or any external database dependencies - just raw binary file I/O and stream parsing.
 
 The primary goal was to understand low-level database internals: how records are packed onto disk, how variable-length integers (Varints) save space, and how B-Trees scale queries out from O(N) full table scans to O(log N) index lookups on massive files.
 
@@ -15,7 +15,7 @@ The primary goal was to understand low-level database internals: how records are
 
 ---
 
-## 💻 Complete Command Reference
+## Complete Command Reference
 
 The program acts as a CLI tool that accepts a database file path and an instruction/SQL string. Here is every command you can run:
 
@@ -28,75 +28,101 @@ Command:
 ```
 
 Expected Output:
-`database page size: 4096
-number of tables: 3`
+```c++
+database page size: 4096
+number of tables: 3
+```
 
 ### 2. List Tables (.tables)
 Scans Page 1's schema cells to find user-created table structures, skipping internal sequence metadata.
 
 Command:
+```c++
 ./your_program.sh sample.db .tables
+```
 
 Expected Output:
+```c++
 apples superheroes companies
+```
 
 ### 3. Aggregate Rows (SELECT COUNT(*))
 Jumps directly to the target table's root page and extracts the 2-byte cell count integer located at the page header offset.
 
 Command:
+```c++
 ./your_program.sh sample.db "SELECT COUNT(*) FROM apples"
+```
 
 Expected Output:
+```c++
 4
+```
 
 ### 4. Single-Column Projection (SELECT col)
 Parses the table's CREATE TABLE schema to find the target column's structural index, then prints that specific payload column for all leaf rows.
 
 Command:
+```c++
 ./your_program.sh sample.db "SELECT name FROM apples"
+```
 
 Expected Output:
+```c++
 Granny Smith
 Fuji
 Honeycrisp
 Golden Delicious
+```
 
 ### 5. Multi-Column Projection (SELECT col1, col2)
 Generates an internal symbol map of requested column positions and pieces the text records together separated by a pipe (|).
 
 Command:
+```c++
 ./your_program.sh sample.db "SELECT name, color FROM apples"
+```
 
 Expected Output:
+```c++
 Granny Smith|Light Green
 Fuji|Red
 Honeycrisp|Blush Red
 Golden Delicious|Yellow
+```
 
 ### 6. Table Scan with Filtering (SELECT ... WHERE)
 Applies an in-memory string-matching filter onto leaf data attributes during table parsing.
 
 Command:
+```c++
 ./your_program.sh sample.db "SELECT name, color FROM apples WHERE color = 'Yellow'"
+```
 
 Expected Output:
+```c++
 Golden Delicious|Yellow
+```
 
 ### 7. Fast Index Scan (Large Datasets)
 Automatically triggers when querying an indexed column (like country in the companies database). It bypasses full table scans entirely, walking the index tree first.
 
 Command:
+```c++
 ./your_program.sh companies.db "SELECT id, name FROM companies WHERE country = 'eritrea'"
+```
 
 Expected Output:
+```c++
 121311|unilink s.c.
 2102438|orange asmara it solutions
 5729848|zara mining share company
 6634629|asmara rental
+```
 
 ---
 
-## 🚀 Setup & Compilation
+## Setup & Compilation
 
 The project uses CMake and requires a compiler supporting C++23.
 
