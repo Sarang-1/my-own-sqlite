@@ -1,40 +1,32 @@
 #include <cstring>
 #include <iostream>
 #include <fstream>
+#include <vector>
+using namespace std;
 
-int main(int argc, char* argv[]) {
-    // Flush after every std::cout / std::cerr
-    std::cout << std::unitbuf;
-    std::cerr << std::unitbuf;
+int main(int argc, char* argv[]){
+    // cerr << "\nStarted" << endl;
 
-    // You can use print statements as follows for debugging, they'll be visible when running tests.
-    std::cerr << "Logs from your program will appear here" << std::endl;
+    string file_name = argv[1];
+    string cmd = argv[2];
 
-    if (argc != 3) {
-        std::cerr << "Expected two arguments" << std::endl;
-        return 1;
-    }
+    ifstream dbfile(file_name,ios::binary);
+    dbfile.seekg(16);
 
-    std::string database_file_path = argv[1];
-    std::string command = argv[2];
+    char buffer[2];
+    dbfile.read(buffer,2);
 
-    if (command == ".dbinfo") {
-        std::ifstream database_file(database_file_path, std::ios::binary);
-        if (!database_file) {
-            std::cerr << "Failed to open the database file" << std::endl;
-            return 1;
-        }
+    int pg_size = (static_cast<unsigned char>(buffer[1]) | static_cast<unsigned char>(buffer[0])<<8);
 
-        // TODO: Uncomment the code below to pass the first stage
-        database_file.seekg(16);  // Skip the first 16 bytes of the header
-        
-        char buffer[2];
-        database_file.read(buffer, 2);
-        
-        unsigned short page_size = (static_cast<unsigned char>(buffer[1]) | (static_cast<unsigned char>(buffer[0]) << 8));
-        
-        std::cout << "database page size: " << page_size << std::endl;
-    }
+    cout << "database page size: "<< pg_size << endl;
+
+    dbfile.seekg(100+3);
+    char buffer2[2];
+    dbfile.read(buffer2,2);
+
+    int rows = (static_cast<unsigned char>(buffer2[1]) | static_cast<unsigned char>(buffer2[0])<<8);
+
+    cout << "number of tables: " << rows << endl;
 
     return 0;
 }
