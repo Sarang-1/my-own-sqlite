@@ -1,48 +1,41 @@
 #include <cstring>
 #include <iostream>
 #include <fstream>
-using namespace std;
 
 int main(int argc, char* argv[]) {
-    // Flush after every cout / cerr
-    cout << unitbuf;
-    cerr << unitbuf;
+    // Flush after every std::cout / std::cerr
+    std::cout << std::unitbuf;
+    std::cerr << std::unitbuf;
 
-    // You can use print statements as follows for debugging, they'll be visible when running tests.
-    cerr << "Logs from your program will appear here" << endl;
+    
 
     if (argc != 3) {
-        cerr << "Expected two arguments" << endl;
+        std::cerr << "Expected two arguments" << std::endl;
         return 1;
     }
 
-    string file_name = argv[1];
-    string command = argv[2];  
+    std::string database_file_path = argv[1];
+    std::string command = argv[2];
 
     if (command == ".dbinfo") {
-        ifstream dbfile(file_name, ios::binary);
-        if (!dbfile) {
-            cerr << "Failed to open the database file" << endl;
+        std::ifstream database_file(database_file_path, std::ios::binary);
+        if (!database_file) {
+            std::cerr << "Failed to open the database file" << std::endl;
             return 1;
         }
 
-        // TODO: Uncomment the code below to pass the first stage
-        dbfile.seekg(16);  // Skip the first 16 bytes of the header
-        
-        char buffer[2];
-        dbfile.read(buffer, 2);
-        
-        unsigned short pg_size = (static_cast<unsigned char>(buffer[1]) | (static_cast<unsigned char>(buffer[0]) << 8));
-        
-        cout << "database page size: " << pg_size << endl;
+        database_file.seekg(16) ; 
+        char buffer[2] ; 
+        database_file.read(buffer , 2) ; 
 
-        dbfile.seekg(100+3);
-        char buffer2[2];
-        dbfile.read(buffer2,2);
+        unsigned short page_size = (static_cast<unsigned char>(buffer[1]) | (static_cast<unsigned char>(buffer[0]) << 8)) ; 
+    
+        std::cout << "database page size: " << page_size << std::endl;
 
-        int rows = (static_cast<unsigned char>(buffer2[1]) | static_cast<unsigned char>(buffer2[0])<<8);
-
-        cout << "number of tables: " << rows << endl;
+        database_file.seekg(100 + 3) ; 
+        database_file.read(buffer , 2) ; 
+        unsigned short tables_num = (static_cast<unsigned char>(buffer[1]) | (static_cast<unsigned char>(buffer[0]) << 8));
+        std::cout << "number of tables: " << tables_num << std::endl ; 
     }
 
     return 0;
