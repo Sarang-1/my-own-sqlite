@@ -43,7 +43,7 @@ Command:
 
 Expected Output:
 ```c++
-apples superheroes companies
+apples oranges
 ```
 
 ### 3. Aggregate Rows (SELECT COUNT(*))
@@ -114,9 +114,9 @@ Command:
 
 Expected Output:
 ```c++
+5729848|zara mining share company
 121311|unilink s.c.
 2102438|orange asmara it solutions
-5729848|zara mining share company
 6634629|asmara rental
 ```
 
